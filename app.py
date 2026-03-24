@@ -3,52 +3,57 @@ from supabase import create_client, Client
 import pandas as pd
 import datetime
 
-# --- CONEXIÓN ---
+# --- CONEXIÓN SEGURA ---
 url = st.secrets["SUPABASE_URL"]
 key = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
 
-st.title("💎 Miracle 82: Registro Contable")
+st.title("💎 Miracle 82: Gestión Contable")
 
-# --- INTENTAR CARGAR EL CATÁLOGO ---
-@st.cache_data(ttl=600)
-def cargar_catalogo():
+# --- CARGAR EL CATÁLOGO DESDE SQL ---
+def obtener_catalogo():
     try:
-        res = supabase.table("catalogo_cuentas").select("codigo_cta, nombre_cta").execute()
+        # Traemos los códigos y nombres de la tabla que acabas de crear
+        res = supabase.table("catalogo").select("codigo_cta, nombre_cta").execute()
         return pd.DataFrame(res.data)
     except:
         return pd.DataFrame()
 
-df_cat = cargar_catalogo()
+df_cat = obtener_catalogo()
 
 # --- FORMULARIO DE REGISTRO ---
-with st.container():
+with st.form("registro_p", clear_on_submit=True):
     st.subheader("📝 Nueva Partida")
     
-    col_a, col_b = st.columns(2)
-    f_fecha = col_a.date_input("Fecha", datetime.date.today())
-    f_empresa = col_b.text_input("Empresa/Cliente")
-
-    # SI HAY CATÁLOGO, USAMOS SELECTBOX (LISTA)
+    c_top1, c_top2 = st.columns(2)
+    f_fecha = c_top1.date_input("Fecha", datetime.date.today())
+    f_empresa = c_top2.text_input("Empresa/Cliente")
+    
+    st.markdown("---")
+    
+    # Aquí es donde usamos el catálogo que ya creaste
     if not df_cat.empty:
+        # Creamos la lista: "1110101001 | Caja General"
         opciones = [f"{row['codigo_cta']} | {row['nombre_cta']}" for _, row in df_cat.iterrows()]
         seleccion = st.selectbox("Seleccione la Cuenta", opciones)
-        # Extraemos los datos de la selección
+        
+        # Separamos los datos para enviarlos a la tabla libro_diario
         f_cod = seleccion.split(" | ")[0]
         f_nom = seleccion.split(" | ")[1]
     else:
-        st.warning("⚠️ No se detectó catálogo en SQL. Ingrese datos manualmente:")
-        f_cod = st.text_input("Código de Cuenta")
-        f_nom = st.text_input("Nombre de la Cuenta")
+        st.error("⚠️ No se encontró el catálogo en SQL. Verifica la tabla 'catalogo'.")
+        f_cod = ""
+        f_nom = ""
 
     c3, c4 = st.columns(2)
     f_deb = c3.number_input("Debe (Lps)", min_value=0.0, format="%.2f")
     f_hab = c4.number_input("Haber (Lps)", min_value=0.0, format="%.2f")
-    f_con = st.text_input("Concepto de la Partida")
-
-    if st.button("💾 GUARDAR EN LIBRO DIARIO"):
-        if f_nom.strip() and (f_deb > 0 or f_hab > 0):
-            nuevo_asiento = {
+    
+    f_con = st.text_input("Concepto o Descripción")
+    
+    if st.form_submit_button("💾 GUARDAR PARTIDA"):
+        if f_nom and (f_deb > 0 or f_hab > 0):
+            nuevo_registro = {
                 "fecha": str(f_fecha),
                 "empresa": f_empresa,
                 "codigo_cta": f_cod,
@@ -58,20 +63,23 @@ with st.container():
                 "concepto": f_con
             }
             try:
-                supabase.table("libro_diario").insert(nuevo_asiento).execute()
-                st.success(f"✅ Registrado: {f_nom}")
+                supabase.table("libro_diario").insert(nuevo_registro).execute()
+                st.success(f"✅ Partida de '{f_nom}' guardada exitosamente.")
                 st.rerun()
             except Exception as e:
                 st.error(f"Error al guardar: {e}")
         else:
-            st.error("❌ Verifique el nombre de la cuenta y los montos.")
+            st.warning("Asegúrate de seleccionar una cuenta y que el monto sea mayor a 0.")
 
-# --- HISTORIAL ---
+# --- VISUALIZACIÓN DEL LIBRO DIARIO ---
 st.divider()
-st.subheader("📋 Movimientos en SQL")
+st.subheader("📖 Movimientos Registrados")
 try:
-    data = supabase.table("libro_diario").select("*").order("created_at", desc=True).execute()
-    if data.data:
-        st.dataframe(pd.DataFrame(data.data)[["fecha", "codigo_cta", "nombre_cta", "debe", "haber", "concepto"]], use_container_width=True)
+    data_sql = supabase.table("libro_diario").select("*").order("created_at", desc=True).execute()
+    if data_sql.data:
+        df_ver = pd.DataFrame(data_sql.data)
+        # Mostramos solo las columnas que nos interesan en orden
+        cols = ["fecha", "empresa", "codigo_cta", "nombre_cta", "debe", "haber", "concepto"]
+        st.dataframe(df_ver[cols], use_container_width=True)
 except:
-    st.info("Aún no hay registros.")
+    st.info("Esperando registros...")
