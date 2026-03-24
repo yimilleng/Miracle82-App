@@ -10,11 +10,11 @@ supabase: Client = create_client(url, key)
 
 st.title("💎 Miracle 82: Registro Contable")
 
-# --- CARGAR CATÁLOGO (Nombre corregido a catalogo_cuentas) ---
+# --- CARGAR CATÁLOGO (Nombre corregido) ---
 @st.cache_data(ttl=60)
 def cargar_datos_catalogo():
     try:
-        # Aquí corregimos el nombre según el error que vimos
+        # Usamos el nombre exacto que Supabase nos pidió: catalogo_cuentas
         res = supabase.table("catalogo_cuentas").select("codigo_cta, nombre_cta").execute()
         return pd.DataFrame(res.data)
     except Exception as e:
@@ -35,11 +35,12 @@ with st.container():
         opciones = [f"{row['codigo_cta']} | {row['nombre_cta']}" for _, row in df_cat.iterrows()]
         seleccion = st.selectbox("Seleccione la Cuenta", opciones)
         
-        # Extraemos los datos seleccionados
+        # Extraemos los datos automáticamente
         f_cod = seleccion.split(" | ")[0]
         f_nom = seleccion.split(" | ")[1]
     else:
-        st.error("⚠️ No se pudo cargar 'catalogo_cuentas'. Revisa el nombre en Supabase.")
+        # Mensaje de alerta si la tabla sigue sin conectar
+        st.error("⚠️ No se pudo conectar con 'catalogo_cuentas'.")
         f_cod = st.text_input("Código")
         f_nom = st.text_input("Nombre de la Cuenta")
 
@@ -61,12 +62,12 @@ with st.container():
             }
             try:
                 supabase.table("libro_diario").insert(asiento).execute()
-                st.success(f"✅ Registrado: {f_nom}")
+                st.success(f"✅ Registrado exitosamente: {f_nom}")
                 st.rerun()
             except Exception as e:
                 st.error(f"Error al guardar: {e}")
         else:
-            st.warning("Seleccione una cuenta y coloque un monto.")
+            st.warning("Seleccione una cuenta y coloque un monto válido.")
 
 # --- TABLA DE RESULTADOS ---
 st.divider()
@@ -75,6 +76,7 @@ try:
     res_diario = supabase.table("libro_diario").select("*").order("created_at", desc=True).execute()
     if res_diario.data:
         df_diario = pd.DataFrame(res_diario.data)
+        # Mostramos las columnas con los nombres nuevos que vimos en tus fotos
         st.dataframe(df_diario[["fecha", "codigo_cta", "nombre_cta", "debe", "haber", "concepto"]], use_container_width=True)
 except:
-    st.info("Esperando datos...")
+    st.info("Esperando registros...")
