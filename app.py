@@ -3,78 +3,75 @@ from supabase import create_client, Client
 import pandas as pd
 import datetime
 
-# --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Miracle 82 ERP", layout="wide", page_icon="💎")
+# --- CONFIGURACIÓN ---
+st.set_page_config(page_title="Miracle 82 ERP", layout="wide")
 
-# --- CONEXIÓN A SUPABASE ---
+# --- CONEXIÓN ---
 url = st.secrets["SUPABASE_URL"]
 key = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
 
 st.sidebar.title("💎 Miracle 82")
-modulo = st.sidebar.radio("MENÚ", ["🏠 Dashboard", "👥 Clientes", "📒 Contabilidad"])
+opcion = st.sidebar.radio("MENÚ", ["Dashboard", "Contabilidad"])
 
-if modulo == "📒 Contabilidad":
-    st.title("Registro de Partidas Contables")
+if opcion == "Contabilidad":
+    st.title("Libro Diario Profesional")
     
-    with st.form("form_contable", clear_on_submit=True):
-        st.subheader("📝 Datos del Asiento")
-        c_sup1, c_sup2 = st.columns(2)
-        f_fecha = c_sup1.date_input("Fecha", datetime.date.today())
-        f_empresa = c_sup2.text_input("Empresa / Cliente (Opcional)")
+    with st.form("form_final", clear_on_submit=True):
+        st.subheader("Nueva Partida")
+        
+        c_top1, c_top2 = st.columns(2)
+        fecha_input = c_top1.date_input("Fecha", datetime.date.today())
+        empresa_input = c_top2.text_input("Empresa")
         
         st.markdown("---")
-        st.write("### Detalle de la Cuenta")
         c1, c2, c3, c4 = st.columns([1, 2, 1, 1])
         
-        # Usamos variables con nombres claros para evitar errores
-        f_codigo = c1.text_input("Código de Cuenta")
-        f_nombre = c2.text_input("Nombre de la Cuenta *")
-        f_debe = c3.number_input("Debe (Lps)", min_value=0.0, format="%.2f")
-        f_haber = c4.number_input("Haber (Lps)", min_value=0.0, format="%.2f")
+        # Variables con nombres únicos
+        cod_data = c1.text_input("Código")
+        nom_data = c2.text_input("Nombre de la Cuenta")
+        debe_data = c3.number_input("Debe", min_value=0.0)
+        habe_data = c4.number_input("Haber", min_value=0.0)
         
-        f_concepto = st.text_input("Concepto / Descripción")
+        con_data = st.text_input("Concepto General")
         
-        submit = st.form_submit_button("🚀 Guardar Partida en SQL")
-        
-        if submit:
-            # VALIDACIÓN: Antes de enviar, verificamos que el nombre tenga texto real
-            nombre_limpio = f_nombre.strip()
-            codigo_limpio = f_codigo.strip()
+        if st.form_submit_button("Guardar en SQL"):
+            # Quitamos espacios y validamos
+            txt_nombre = nom_data.strip()
+            txt_codigo = cod_data.strip()
             
-            if not nombre_limpio or not codigo_limpio:
-                st.error("❌ ERROR: El Código y el Nombre de la cuenta son OBLIGATORIOS.")
-            elif f_debe == 0 and f_haber == 0:
-                st.error("❌ ERROR: Debe ingresar un monto en el Debe o en el Haber.")
+            if not txt_nombre or not txt_codigo:
+                st.error("❌ El CÓDIGO y el NOMBRE son obligatorios.")
+            elif debe_data == 0 and habe_data == 0:
+                st.error("❌ El monto no puede ser cero.")
             else:
-                # Preparamos el envío exacto
-                datos_para_sql = {
-                    "fecha": str(f_fecha),
-                    "empresa": f_empresa if f_empresa else "General",
-                    "cuenta_codigo": codigo_limpio,
-                    "cuenta_nombre": nombre_limpio,
-                    "debe": f_debe,
-                    "haber": f_haber,
-                    "concepto": f_concepto if f_concepto else "Sin concepto"
+                # MAPEO DIRECTO A LAS NUEVAS COLUMNAS SIMPLIFICADAS
+                registro = {
+                    "fecha": str(fecha_input),
+                    "empresa": empresa_input,
+                    "codigo": txt_codigo,
+                    "cuenta": txt_nombre, # <--- Enviamos a la columna 'cuenta'
+                    "debe": debe_data,
+                    "haber": habe_data,
+                    "concepto": con_data
                 }
                 
                 try:
-                    supabase.table("libro_diario").insert(datos_para_sql).execute()
-                    st.success(f"✅ Se guardó correctamente: {nombre_limpio}")
+                    # Intento de inserción
+                    supabase.table("libro_diario").insert(registro).execute()
+                    st.success(f"✅ Guardado: {txt_nombre}")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error de base de datos: {e}")
+                    st.error(f"Error técnico: {e}")
 
-    # --- TABLA DE HISTORIAL ---
+    # --- VISUALIZACIÓN ---
     st.divider()
-    st.subheader("📖 Movimientos Registrados")
+    st.subheader("Registros en SQL")
     res = supabase.table("libro_diario").select("*").order("created_at", desc=True).execute()
     if res.data:
         df = pd.DataFrame(res.data)
-        # Reordenamos para que el contador vea lo importante primero
-        df_ver = df[["fecha", "empresa", "cuenta_codigo", "cuenta_nombre", "debe", "haber", "concepto"]]
-        st.dataframe(df_ver, use_container_width=True)
+        # Seleccionamos las columnas con los nuevos nombres
+        st.dataframe(df[["fecha", "empresa", "codigo", "cuenta", "debe", "haber", "concepto"]], use_container_width=True)
 
 else:
-    st.title("Bienvenido a Miracle 82")
-    st.write("Selecciona un módulo en el menú de la izquierda para comenzar.")
+    st.write("Seleccione Contabilidad en el menú.")
