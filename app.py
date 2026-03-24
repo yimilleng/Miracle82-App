@@ -3,75 +3,72 @@ from supabase import create_client, Client
 import pandas as pd
 import datetime
 
-# --- CONFIGURACIÓN ---
+# --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Miracle 82 ERP", layout="wide")
 
 # --- CONEXIÓN ---
-try:
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-    supabase: Client = create_client(url, key)
-except:
-    st.error("Error en Secrets")
-    st.stop()
+url = st.secrets["SUPABASE_URL"]
+key = st.secrets["SUPABASE_KEY"]
+supabase: Client = create_client(url, key)
 
-st.sidebar.title("💎 Miracle 82")
-opcion = st.sidebar.radio("MENÚ", ["Contabilidad"])
+st.title("💎 Miracle 82: Registro Contable")
 
-if opcion == "Contabilidad":
-    st.title("Registro Contable Real-Time")
+# --- FORMULARIO CON CAPTURA FORZADA ---
+with st.container():
+    st.subheader("📝 Nueva Partida")
     
-    with st.form("form_contabilidad_v3", clear_on_submit=True):
-        f_fecha = st.date_input("Fecha", datetime.date.today())
-        f_empresa = st.text_input("Empresa/Cliente")
-        
-        c1, c2, c3, c4 = st.columns([1, 2, 1, 1])
-        f_codigo = c1.text_input("Código")
-        f_nombre = c2.text_input("Nombre de la Cuenta") # <--- CAMPO CRÍTICO
-        f_debe = c3.number_input("Debe", min_value=0.0)
-        f_haber = c4.number_input("Haber", min_value=0.0)
-        
-        f_concepto = st.text_input("Concepto")
-        
-        if st.form_submit_button("💾 GUARDAR EN SQL"):
-            # 1. Capturamos y limpiamos los datos
-            dato_nombre = str(f_nombre).strip()
-            dato_codigo = str(f_codigo).strip()
-            
-            # 2. Validación manual antes de enviar
-            if not dato_nombre or dato_nombre == "":
-                st.error("❌ El nombre de la cuenta llegó vacío al servidor.")
-            elif not dato_codigo:
-                st.error("❌ El código es obligatorio.")
-            else:
-                # 3. Mapeo EXACTO a la nueva tabla
-                registro = {
-                    "fecha": str(f_fecha),
-                    "empresa": f_empresa,
-                    "codigo_cta": dato_codigo,
-                    "nombre_cta": dato_nombre, # <--- Usando el nuevo nombre de columna
-                    "debe": f_debe,
-                    "haber": f_haber,
-                    "concepto": f_concepto
-                }
-                
-                try:
-                    # Intento de inserción con reporte
-                    response = supabase.table("libro_diario").insert(registro).execute()
-                    st.success(f"✅ Se guardó: {dato_nombre}")
-                    st.balloons() # Animación para confirmar éxito
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error de SQL: {e}")
+    # Campos generales
+    col_a, col_b = st.columns(2)
+    f_fecha = col_a.date_input("Fecha", datetime.date.today())
+    f_empresa = col_b.text_input("Empresa/Cliente", key="empresa")
+    
+    # Campos de la cuenta
+    c1, c2, c3, c4 = st.columns([1, 2, 1, 1])
+    # USAMOS KEYS PARA FORZAR LA CAPTURA EN MEMORIA
+    f_cod = c1.text_input("Código", key="cod")
+    f_nom = c2.text_input("Nombre de la Cuenta", key="nom") 
+    f_deb = c3.number_input("Debe", min_value=0.0, format="%.2f", key="deb")
+    f_hab = c4.number_input("Haber", min_value=0.0, format="%.2f", key="hab")
+    
+    f_con = st.text_input("Concepto", key="con")
 
-    # --- TABLA ---
-    st.divider()
-    try:
-        data_sql = supabase.table("libro_diario").select("*").order("created_at", desc=True).execute()
-        if data_sql.data:
-            df = pd.DataFrame(data_sql.data)
-            # Mostramos las columnas nuevas
-            columnas_finales = ["fecha", "empresa", "codigo_cta", "nombre_cta", "debe", "haber", "concepto"]
-            st.dataframe(df[columnas_finales], use_container_width=True)
-    except:
-        st.info("Esperando primer registro...")
+    if st.button("💾 GUARDAR REGISTRO EN SQL"):
+        # Recuperamos los datos directamente de la memoria de la app (session_state)
+        val_nombre = st.session_state.nom.strip()
+        val_codigo = st.session_state.cod.strip()
+        
+        if not val_nombre or not val_codigo:
+            st.error("❌ ERROR: El nombre y el código de la cuenta son obligatorios.")
+        elif st.session_state.deb == 0 and st.session_state.hab == 0:
+            st.error("❌ ERROR: Debe ingresar un monto.")
+        else:
+            # Preparamos el registro
+            nuevo_asiento = {
+                "fecha": str(f_fecha),
+                "empresa": st.session_state.empresa,
+                "codigo_cta": val_codigo,
+                "nombre_cta": val_nombre, # <--- Enviamos el valor forzado
+                "debe": st.session_state.deb,
+                "haber": st.session_state.hab,
+                "concepto": st.session_state.con
+            }
+            
+            try:
+                supabase.table("libro_diario").insert(nuevo_asiento).execute()
+                st.success(f"✅ ¡Éxito! Registrada la cuenta: {val_nombre}")
+                # Limpiamos manualmente para el siguiente registro
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error de SQL: {e}")
+
+# --- VISUALIZACIÓN ---
+st.divider()
+st.subheader("📋 Libro Diario Actualizado")
+try:
+    data = supabase.table("libro_diario").select("*").order("created_at", desc=True).execute()
+    if data.data:
+        df = pd.DataFrame(data.data)
+        columnas = ["fecha", "empresa", "codigo_cta", "nombre_cta", "debe", "haber", "concepto"]
+        st.dataframe(df[columnas], use_container_width=True)
+except:
+    st.info("Esperando datos...")
