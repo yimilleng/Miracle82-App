@@ -7,71 +7,71 @@ import datetime
 st.set_page_config(page_title="Miracle 82 ERP", layout="wide")
 
 # --- CONEXIÓN ---
-url = st.secrets["SUPABASE_URL"]
-key = st.secrets["SUPABASE_KEY"]
-supabase: Client = create_client(url, key)
+try:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    supabase: Client = create_client(url, key)
+except:
+    st.error("Error en Secrets")
+    st.stop()
 
 st.sidebar.title("💎 Miracle 82")
-opcion = st.sidebar.radio("MENÚ", ["Dashboard", "Contabilidad"])
+opcion = st.sidebar.radio("MENÚ", ["Contabilidad"])
 
 if opcion == "Contabilidad":
-    st.title("Libro Diario Profesional")
+    st.title("Registro Contable Real-Time")
     
-    with st.form("form_final", clear_on_submit=True):
-        st.subheader("Nueva Partida")
+    with st.form("form_contabilidad_v3", clear_on_submit=True):
+        f_fecha = st.date_input("Fecha", datetime.date.today())
+        f_empresa = st.text_input("Empresa/Cliente")
         
-        c_top1, c_top2 = st.columns(2)
-        fecha_input = c_top1.date_input("Fecha", datetime.date.today())
-        empresa_input = c_top2.text_input("Empresa")
-        
-        st.markdown("---")
         c1, c2, c3, c4 = st.columns([1, 2, 1, 1])
+        f_codigo = c1.text_input("Código")
+        f_nombre = c2.text_input("Nombre de la Cuenta") # <--- CAMPO CRÍTICO
+        f_debe = c3.number_input("Debe", min_value=0.0)
+        f_haber = c4.number_input("Haber", min_value=0.0)
         
-        # Variables con nombres únicos
-        cod_data = c1.text_input("Código")
-        nom_data = c2.text_input("Nombre de la Cuenta")
-        debe_data = c3.number_input("Debe", min_value=0.0)
-        habe_data = c4.number_input("Haber", min_value=0.0)
+        f_concepto = st.text_input("Concepto")
         
-        con_data = st.text_input("Concepto General")
-        
-        if st.form_submit_button("Guardar en SQL"):
-            # Quitamos espacios y validamos
-            txt_nombre = nom_data.strip()
-            txt_codigo = cod_data.strip()
+        if st.form_submit_button("💾 GUARDAR EN SQL"):
+            # 1. Capturamos y limpiamos los datos
+            dato_nombre = str(f_nombre).strip()
+            dato_codigo = str(f_codigo).strip()
             
-            if not txt_nombre or not txt_codigo:
-                st.error("❌ El CÓDIGO y el NOMBRE son obligatorios.")
-            elif debe_data == 0 and habe_data == 0:
-                st.error("❌ El monto no puede ser cero.")
+            # 2. Validación manual antes de enviar
+            if not dato_nombre or dato_nombre == "":
+                st.error("❌ El nombre de la cuenta llegó vacío al servidor.")
+            elif not dato_codigo:
+                st.error("❌ El código es obligatorio.")
             else:
-                # MAPEO DIRECTO A LAS NUEVAS COLUMNAS SIMPLIFICADAS
+                # 3. Mapeo EXACTO a la nueva tabla
                 registro = {
-                    "fecha": str(fecha_input),
-                    "empresa": empresa_input,
-                    "codigo": txt_codigo,
-                    "cuenta": txt_nombre, # <--- Enviamos a la columna 'cuenta'
-                    "debe": debe_data,
-                    "haber": habe_data,
-                    "concepto": con_data
+                    "fecha": str(f_fecha),
+                    "empresa": f_empresa,
+                    "codigo_cta": dato_codigo,
+                    "nombre_cta": dato_nombre, # <--- Usando el nuevo nombre de columna
+                    "debe": f_debe,
+                    "haber": f_haber,
+                    "concepto": f_concepto
                 }
                 
                 try:
-                    # Intento de inserción
-                    supabase.table("libro_diario").insert(registro).execute()
-                    st.success(f"✅ Guardado: {txt_nombre}")
+                    # Intento de inserción con reporte
+                    response = supabase.table("libro_diario").insert(registro).execute()
+                    st.success(f"✅ Se guardó: {dato_nombre}")
+                    st.balloons() # Animación para confirmar éxito
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error técnico: {e}")
+                    st.error(f"Error de SQL: {e}")
 
-    # --- VISUALIZACIÓN ---
+    # --- TABLA ---
     st.divider()
-    st.subheader("Registros en SQL")
-    res = supabase.table("libro_diario").select("*").order("created_at", desc=True).execute()
-    if res.data:
-        df = pd.DataFrame(res.data)
-        # Seleccionamos las columnas con los nuevos nombres
-        st.dataframe(df[["fecha", "empresa", "codigo", "cuenta", "debe", "haber", "concepto"]], use_container_width=True)
-
-else:
-    st.write("Seleccione Contabilidad en el menú.")
+    try:
+        data_sql = supabase.table("libro_diario").select("*").order("created_at", desc=True).execute()
+        if data_sql.data:
+            df = pd.DataFrame(data_sql.data)
+            # Mostramos las columnas nuevas
+            columnas_finales = ["fecha", "empresa", "codigo_cta", "nombre_cta", "debe", "haber", "concepto"]
+            st.dataframe(df[columnas_finales], use_container_width=True)
+    except:
+        st.info("Esperando primer registro...")
