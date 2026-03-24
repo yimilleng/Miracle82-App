@@ -1,67 +1,73 @@
 import streamlit as st
+from supabase import create_client, Client
 import pandas as pd
 
-# --- CONFIGURACIÓN E IDENTIDAD ---
-st.set_page_config(page_title="Miracle 82 ERP", layout="wide")
+# --- CONEXIÓN SEGURA A SUPABASE ---
+# Asegúrate de tener estas llaves en la sección 'Secrets' de Streamlit Cloud
+try:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    supabase: Client = create_client(url, key)
+except Exception as e:
+    st.error("⚠️ Error de conexión: Revisa tus 'Secrets' en Streamlit.")
+    st.stop()
 
-# Colores de la marca: Esmeralda y Oro
-st.markdown("""
-    <style>
-    [data-testid="stSidebar"] { background-color: #004d2c; }
-    [data-testid="stSidebar"] * { color: white; }
-    .stMetric { background-color: #ffffff; border: 1px solid #d4af37; padding: 15px; border-radius: 10px; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- NAVEGACIÓN POR MÓDULOS ---
 st.sidebar.title("💎 Miracle 82 ERP")
-modulo = st.sidebar.radio("MENÚ PRINCIPAL", [
-    "🏠 Inicio / Dashboard",
-    "📒 Contabilidad",
-    "🏦 Bancos",
-    "👥 Clientes (Cuentas por Cobrar)",
-    "📦 Proveedores (Cuentas por Pagar)",
-    "👷 Nóminas (Planillas)",
-    "🏗️ Inventarios",
-    "📈 Reportes Financieros",
-    "🤝 CRM (Gestión de Ventas)"
-])
+modulo = st.sidebar.radio("MENÚ", ["🏠 Dashboard", "👥 Clientes (SQL)", "📒 Contabilidad"])
 
-# --- LÓGICA DE CADA MÓDULO ---
+# --- MÓDULO DE CLIENTES CON SQL ---
+if modulo == "👥 Clientes (SQL)":
+    st.title("Gestión de Clientes en SQL")
+    
+    # Formulario para insertar datos
+    with st.form("registro_cliente", clear_on_submit=True):
+        st.subheader("➕ Registrar Nuevo Cliente")
+        col1, col2 = st.columns(2)
+        with col1:
+            rtn = st.text_input("RTN del Cliente")
+            nombre = st.text_input("Nombre o Razón Social")
+        with col2:
+            contacto = st.text_input("Nombre de Contacto")
+            tel = st.text_input("Teléfono")
+        
+        submit = st.form_submit_button("Guardar en Base de Datos")
+        
+        if submit:
+            if rtn and nombre:
+                # Datos para enviar a Supabase
+                nuevo_cliente = {
+                    "rtn": rtn,
+                    "nombre_social": nombre,
+                    "contacto_principal": contacto,
+                    "telefono": tel
+                }
+                # OPERACIÓN SQL: Insertar fila
+                try:
+                    supabase.table("clientes").insert(nuevo_cliente).execute()
+                    st.success(f"✅ Cliente '{nombre}' guardado exitosamente en SQL.")
+                except Exception as err:
+                    st.error(f"❌ Error al guardar: {err}")
+            else:
+                st.warning("Por favor, ingresa al menos el RTN y el Nombre.")
 
-if modulo == "🏠 Inicio / Dashboard":
-    st.header("Resumen General de Operaciones")
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Saldo en Bancos", "L. 45,200.00")
-    col2.metric("Por Cobrar", "L. 12,500.00")
-    col3.metric("Por Pagar", "L. 8,300.00")
-    col4.metric("Ventas Mes", "L. 85,000.00")
+    # Visualización de datos en tiempo real
+    st.divider()
+    st.subheader("📋 Cartera de Clientes Actual")
+    try:
+        # OPERACIÓN SQL: Leer datos
+        response = supabase.table("clientes").select("*").execute()
+        if response.data:
+            df_mostrar = pd.DataFrame(response.data)
+            st.dataframe(df_mostrar, use_container_width=True)
+        else:
+            st.info("Aún no hay clientes registrados en la base de datos.")
+    except Exception as e:
+        st.error(f"No se pudieron cargar los datos: {e}")
 
-elif modulo == "📒 Contabilidad":
-    st.header("Módulo Contable")
-    tab1, tab2 = st.tabs(["Partidas Manuales", "Catálogo de Cuentas"])
-    with tab1:
-        st.write("Registro de pólizas y ajustes de cierre.")
-    with tab2:
-        st.write("Gestión del catálogo cargado.")
-
-elif modulo == "🏦 Bancos":
-    st.header("Gestión de Tesorería")
-    st.button("➕ Conciliación Bancaria")
-    st.button("💸 Registrar Cheque / Transferencia")
-
-elif modulo == "👥 Clientes (Cuentas por Cobrar)":
-    st.header("Cartera de Clientes")
-    st.text_input("Buscar Cliente por RTN")
-    # Aquí conectaríamos con el registro de facturas que ya hicimos
-
-elif modulo == "👷 Nóminas (Planillas)":
-    st.header("Gestión de Talento Humano")
-    st.info("Cálculo automático de RAP, IHSS e INFOP.")
-    st.date_input("Fecha de pago de quincena")
-
-elif modulo == "🤝 CRM (Gestión de Ventas)":
-    st.header("Seguimiento de Prospectos")
-    st.selectbox("Estado del Trato", ["Primer Contacto", "Propuesta Enviada", "Cierre / Contrato"])
-
-# (El resto de módulos se van llenando con la misma lógica)
+# --- MÓDULO DASHBOARD (Resumen) ---
+elif modulo == "🏠 Dashboard":
+    st.title("Panel General")
+    # Aquí podrías hacer un conteo real de clientes usando SQL
+    res = supabase.table("clientes").select("id", count="exact").execute()
+    total_clientes = res.count if res.count else 0
+    st.metric("Clientes Registrados", total_clientes)
