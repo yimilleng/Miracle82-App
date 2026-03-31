@@ -30,6 +30,9 @@ if menu == "📊 Dashboards":
 # --- MÓDULO 2: CONTABILIDAD ---
 elif menu == "📒 Contabilidad":
     st.title("Libro Diario y Catálogo")
+    # Bloque de prueba rápida
+test_data = supabase.table("catalogo_cuentas").select("count", count="exact").execute()
+st.write(f"Cuentas encontradas en la base de datos: {test_data.count}")
     
     # Cargar catálogo real
     res_cat = supabase.table("catalogo_cuentas").select("codigo_cta, nombre_cta").execute()
